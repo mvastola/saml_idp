@@ -16,10 +16,11 @@ module SamlIdp
     attr_accessor :name_id_format
     attr_accessor :expiry
     attr_accessor :encryption_opts
+    attr_accessor :session_expiry
 
     delegate :config, to: :SamlIdp
 
-    def initialize(reference_id, issuer_uri, principal, audience_uri, saml_request_id, saml_acs_url, raw_algorithm, authn_context_classref, name_id_format, expiry=60*60, encryption_opts=nil)
+    def initialize(reference_id, issuer_uri, principal, audience_uri, saml_request_id, saml_acs_url, raw_algorithm, authn_context_classref, name_id_format, expiry=60*60, encryption_opts=nil, session_expiry=nil)
       self.reference_id = reference_id
       self.issuer_uri = issuer_uri
       self.principal = principal
@@ -31,6 +32,7 @@ module SamlIdp
       self.name_id_format = name_id_format
       self.expiry = expiry
       self.encryption_opts = encryption_opts
+      self.session_expiry = session_expiry.nil? ? config.session_expiry : session_expiry
     end
 
     def fresh
@@ -54,7 +56,14 @@ module SamlIdp
               restriction.Audience audience_uri
             end
           end
-          assertion.AuthnStatement AuthnInstant: now_iso, SessionIndex: reference_string do |statement|
+          authn_statement_props = {
+            AuthnInstant: now_iso,
+            SessionIndex: reference_string,
+          }
+          unless session_expiry.zero?
+            authn_statement_props[:SessionNotOnOrAfter] = session_not_on_or_after
+          end
+          assertion.AuthnStatement authn_statement_props do |statement|
             statement.AuthnContext do |context|
               context.AuthnContextClassRef authn_context_classref
             end
@@ -162,6 +171,11 @@ module SamlIdp
       iso { now + 3 * 60 }
     end
     private :not_on_or_after_subject
+
+    def session_not_on_or_after
+      iso { now + session_expiry }
+    end
+    private :session_not_on_or_after
 
     def iso
       yield.iso8601
